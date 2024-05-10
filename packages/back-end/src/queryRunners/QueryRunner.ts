@@ -7,6 +7,7 @@ import {
   QueryType,
 } from "../../types/query";
 import {
+  countRunningQueries,
   createNewQuery,
   createNewQueryFromCached,
   getQueriesByIds,
@@ -314,11 +315,19 @@ export abstract class QueryRunner<
             });
             this.onQueryFinish();
           } else {
-            await this.executeQuery(
-              query,
-              runCallbacks.run,
-              runCallbacks.process
-            );
+            if (await this.concurrencyLimitReached()) {
+              return this.executeQueryWhenReady(
+                query,
+                runCallbacks.run,
+                runCallbacks.process
+              );
+            } else {
+              await this.executeQuery(
+                query,
+                runCallbacks.run,
+                runCallbacks.process
+              );
+            }
           }
         }
       })
@@ -441,6 +450,33 @@ export abstract class QueryRunner<
 
       this.setStatus("finished", "Queries cancelled by user");
     }
+  }
+
+  public async executeQueryWhenReady<
+    Rows extends RowsType,
+    ProcessedRows extends ProcessedRowsType
+  >(
+    doc: QueryInterface,
+    run: (
+      query: string,
+      setExternalId: ExternalIdCallback
+    ) => Promise<QueryResponse<Rows>>,
+    process: (rows: Rows) => ProcessedRows,
+    currentTimeout: number = 500
+  ): Promise<void> {
+    // If too many queries are running against the datastore, use capped exponential backoff to reduce load
+    const concurrencyLimitReached = await this.concurrencyLimitReached();
+    if (concurrencyLimitReached) {
+      logger.debug(
+        `${doc.id}: Query concurrency limit reached, waiting ${currentTimeout} before retrying`
+      );
+      const nextTimeout = Math.min(currentTimeout * 2, 8000);
+      setTimeout(() => {
+        this.executeQueryWhenReady(doc, run, process, nextTimeout);
+      }, currentTimeout);
+      return;
+    }
+    return this.executeQuery(doc, run, process);
   }
 
   public async executeQuery<
@@ -580,7 +616,8 @@ export abstract class QueryRunner<
 
     // Create a new query in mongo
     logger.debug("Creating query for: " + name);
-    const readyToRun = dependencies.length === 0;
+    const concurrencyLimitReached = await this.concurrencyLimitReached();
+    const dependenciesComplete = dependencies.length === 0;
     const doc = await createNewQuery({
       query,
       queryType,
@@ -588,12 +625,14 @@ export abstract class QueryRunner<
       organization: this.integration.context.org.id,
       language: this.integration.getSourceProperties().queryLanguage,
       dependencies: dependencies,
-      running: readyToRun,
+      running: dependenciesComplete && !concurrencyLimitReached,
     });
 
     logger.debug("Created new query " + doc.id + " for " + name);
-    if (readyToRun) {
+    if (dependenciesComplete && !concurrencyLimitReached) {
       this.executeQuery(doc, run, process);
+    } else if (dependenciesComplete) {
+      this.executeQueryWhenReady(doc, run, process);
     } else {
       // save callback methods for execution later
       this.runCallbacks[doc.id] = { run, process };
@@ -604,6 +643,26 @@ export abstract class QueryRunner<
       query: doc.id,
       status: doc.status,
     };
+  }
+
+  // Limit number of currently running queries
+  private async concurrencyLimitReached(): Promise<boolean> {
+    if (
+      this.integration.datasource.settings.concurrencySettings
+        ?.maxConcurrentQueries
+    ) {
+      const numRunningQueries = await countRunningQueries(
+        this.integration.context.org.id,
+        this.integration.datasource.id
+      );
+      return (
+        numRunningQueries >
+        this.integration.datasource.settings.concurrencySettings
+          .maxConcurrentQueries
+      );
+    } else {
+      return new Promise<boolean>((resolve) => resolve(false));
+    }
   }
 
   private getOverallQueryStatus(): QueryStatus {

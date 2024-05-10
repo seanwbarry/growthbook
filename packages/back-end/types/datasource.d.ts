@@ -170,6 +170,10 @@ export type DataSourcePipelineSettings = {
   unitsTableRetentionHours?: number;
 };
 
+export type DataSourceConcurrencySettings = {
+  maxConcurrentQueries: number;
+};
+
 export type DataSourceSettings = {
   // @deprecated
   experimentDimensions?: string[];
@@ -210,6 +214,7 @@ export type DataSourceSettings = {
     userIdColumn?: string;
   };
   pipelineSettings?: DataSourcePipelineSettings;
+  concurrencySettings?: DataSourceConcurrencySettings;
 };
 
 interface DataSourceBase {
