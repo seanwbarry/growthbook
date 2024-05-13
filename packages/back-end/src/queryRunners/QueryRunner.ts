@@ -316,11 +316,13 @@ export abstract class QueryRunner<
             this.onQueryFinish();
           } else {
             if (await this.concurrencyLimitReached()) {
-              await this.executeQueryWhenReady(
-                query,
-                runCallbacks.run,
-                runCallbacks.process
-              );
+              setTimeout(() => {
+                this.executeQueryWhenReady(
+                  query,
+                  runCallbacks.run,
+                  runCallbacks.process
+                );
+              }, 500);
             } else {
               await this.executeQuery(
                 query,
@@ -633,7 +635,9 @@ export abstract class QueryRunner<
     if (dependenciesComplete && !concurrencyLimitReached) {
       this.executeQuery(doc, run, process);
     } else if (dependenciesComplete) {
-      this.executeQueryWhenReady(doc, run, process);
+      setTimeout(() => {
+        this.executeQueryWhenReady(doc, run, process);
+      }, 500);
     } else {
       // save callback methods for execution later
       this.runCallbacks[doc.id] = { run, process };
