@@ -316,7 +316,7 @@ export abstract class QueryRunner<
             this.onQueryFinish();
           } else {
             if (await this.concurrencyLimitReached()) {
-              return this.executeQueryWhenReady(
+              await this.executeQueryWhenReady(
                 query,
                 runCallbacks.run,
                 runCallbacks.process
@@ -464,13 +464,14 @@ export abstract class QueryRunner<
     process: (rows: Rows) => ProcessedRows,
     currentTimeout: number = 500
   ): Promise<void> {
-    // If too many queries are running against the datastore, use capped exponential backoff to reduce load
+    // If too many queries are running against the datastore, use capped exponential backoff to wait until they've finished
     const concurrencyLimitReached = await this.concurrencyLimitReached();
     if (concurrencyLimitReached) {
       logger.debug(
         `${doc.id}: Query concurrency limit reached, waiting ${currentTimeout} before retrying`
       );
       const nextTimeout = Math.min(currentTimeout * 2, 8000);
+      // TODO: ran into issue with orphaned queries here; is that dev-only or do we need to check for stale queries
       setTimeout(() => {
         this.executeQueryWhenReady(doc, run, process, nextTimeout);
       }, currentTimeout);
@@ -653,7 +654,7 @@ export abstract class QueryRunner<
         this.integration.datasource.id
       );
       return (
-        numRunningQueries >
+        numRunningQueries >=
         this.integration.datasource.settings.maxConcurrentQueries
       );
     } else {

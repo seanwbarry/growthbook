@@ -28,6 +28,7 @@ export default function ConnectionSettings({
   setDirty,
   hasError,
 }: Props) {
+  // Set the new params (specific per-datasource) and optionally settings (shared between datasources)
   const setParams = (
     params: { [key: string]: string },
     settings: { [key: string]: string } = {}

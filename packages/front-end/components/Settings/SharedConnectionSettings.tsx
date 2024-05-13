@@ -1,5 +1,7 @@
 import { DataSourceSettings } from "@back-end/types/datasource";
 import { ChangeEventHandler } from "react";
+import Tooltip from "@/components/Tooltip/Tooltip";
+import Field from "@/components/Forms/Field";
 
 export interface Props {
   settings: Partial<DataSourceSettings>;
@@ -13,14 +15,27 @@ export default function SharedConnectionSettings({
   return (
     <>
       <div className="row">
-        <div className="form-group col-md-12">
-          <label>Maximum Concurrent Connections</label>
-          <input
-            type="number"
-            className="form-control"
+        <div className="col-md-12">
+          <Field
             name="maxConcurrentQueries"
+            type="number"
+            label={
+              <>
+                Maximum Concurrent Queries (Optional){" "}
+                <Tooltip
+                  body={
+                    "When executing queries against this datasource, if this many queries are already" +
+                    " running then new connections will wait for existing connections to finish. This" +
+                    " limit is not exact, e.g. if set to 100 it still might allow slightly over 100" +
+                    " queries to run simultaneously due to race conditions"
+                  }
+                />
+              </>
+            }
+            helpText="A value of 0 or an empty field will result in no limit on the number of queries"
             value={settings.maxConcurrentQueries || ""}
             onChange={onSettingChange}
+            min={0}
           />
         </div>
       </div>
