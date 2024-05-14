@@ -473,7 +473,6 @@ export abstract class QueryRunner<
         `${doc.id}: Query concurrency limit reached, waiting ${currentTimeout} before retrying`
       );
       const nextTimeout = Math.min(currentTimeout * 2, 8000);
-      // TODO: ran into issue with orphaned queries here; is that dev-only or do we need to check for stale queries
       setTimeout(() => {
         this.executeQueryWhenReady(doc, run, process, nextTimeout);
       }, currentTimeout);
