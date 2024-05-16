@@ -27,7 +27,7 @@ export default function SharedConnectionSettings({
                     "When executing queries against this datasource, if this many queries are already" +
                     " running then new connections will wait for existing connections to finish. This" +
                     " limit is not exact, e.g. if set to 100 it still might allow slightly over 100" +
-                    " queries to run simultaneously due to race conditions"
+                    " queries to run simultaneously if many are initiated by a single experiment update"
                   }
                 />
               </>
