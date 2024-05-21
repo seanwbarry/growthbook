@@ -472,6 +472,7 @@ export abstract class QueryRunner<
       logger.debug(
         `${doc.id}: Query concurrency limit reached, waiting ${currentTimeout} before retrying`
       );
+      this.runCallbacks[doc.id] = { run, process };
       const nextTimeout = Math.min(currentTimeout * 2, 8000);
       setTimeout(() => {
         this.executeQueryWhenReady(doc, run, process, nextTimeout);
