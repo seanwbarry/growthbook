@@ -104,6 +104,7 @@ export abstract class QueryRunner<
     };
   } = {};
   private useCache: boolean;
+  private queuedQueryTimers: Record<string, NodeJS.Timeout> = {};
 
   public constructor(
     context: ReqContext | ApiReqContext,
@@ -262,6 +263,10 @@ export abstract class QueryRunner<
       } runner that are ready: ${queuedQueries.map((q) => q.id)}`
     );
     for (const query of queuedQueries) {
+      // If the query already has a timeout set, we don't need to queue it up again.
+      if (this.queuedQueryTimers[query.id]) {
+        return;
+      }
       // check if all dependencies are finished
       // assumes all dependencies are within the model; if any are not, query will hang
       // in queued state
@@ -315,13 +320,13 @@ export abstract class QueryRunner<
           this.onQueryFinish();
         } else {
           if (await this.concurrencyLimitReached()) {
-            setTimeout(() => {
+            this.queuedQueryTimers[query.id] = setTimeout(() => {
               this.executeQueryWhenReady(
                 query,
                 runCallbacks.run,
                 runCallbacks.process
               );
-            }, 500);
+            }, 250);
           } else {
             await this.executeQuery(
               query,
@@ -462,7 +467,7 @@ export abstract class QueryRunner<
       setExternalId: ExternalIdCallback
     ) => Promise<QueryResponse<Rows>>,
     process: (rows: Rows) => ProcessedRows,
-    currentTimeout: number = 500
+    currentTimeout: number = 250
   ): Promise<void> {
     // If too many queries are running against the datastore, use capped exponential backoff to wait until they've finished
     const concurrencyLimitReached = await this.concurrencyLimitReached();
@@ -471,12 +476,13 @@ export abstract class QueryRunner<
         `${doc.id}: Query concurrency limit reached, waiting ${currentTimeout} before retrying`
       );
       this.runCallbacks[doc.id] = { run, process };
-      const nextTimeout = Math.min(currentTimeout * 2, 8000);
-      setTimeout(() => {
+      const nextTimeout = Math.min(currentTimeout * 2, 4000);
+      this.queuedQueryTimers[doc.id] = setTimeout(() => {
         this.executeQueryWhenReady(doc, run, process, nextTimeout);
       }, currentTimeout);
       return;
     }
+    delete this.queuedQueryTimers[doc.id];
     return this.executeQuery(doc, run, process);
   }
 
@@ -633,9 +639,9 @@ export abstract class QueryRunner<
     if (dependenciesComplete && !concurrencyLimitReached) {
       this.executeQuery(doc, run, process);
     } else if (dependenciesComplete) {
-      setTimeout(() => {
+      this.queuedQueryTimers[doc.id] = setTimeout(() => {
         this.executeQueryWhenReady(doc, run, process);
-      }, 500);
+      }, 250);
     } else {
       // save callback methods for execution later
       this.runCallbacks[doc.id] = { run, process };
