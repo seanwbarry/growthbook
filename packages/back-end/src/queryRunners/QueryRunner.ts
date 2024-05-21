@@ -261,79 +261,77 @@ export abstract class QueryRunner<
         this.model.id
       } runner that are ready: ${queuedQueries.map((q) => q.id)}`
     );
-    await Promise.all(
-      queuedQueries.map(async (query) => {
-        // check if all dependencies are finished
-        // assumes all dependencies are within the model; if any are not, query will hang
-        // in queued state
+    for (const query of queuedQueries) {
+      // check if all dependencies are finished
+      // assumes all dependencies are within the model; if any are not, query will hang
+      // in queued state
 
-        const failedDependencies: QueryPointer[] = [];
-        const succeededDependencies: QueryPointer[] = [];
-        const pendingDependencies: QueryPointer[] = [];
+      const failedDependencies: QueryPointer[] = [];
+      const succeededDependencies: QueryPointer[] = [];
+      const pendingDependencies: QueryPointer[] = [];
 
-        const dependencyIds: string[] = query.dependencies ?? [];
-        dependencyIds.forEach((dependencyId) => {
-          const dependencyQuery = this.model.queries.find(
-            (q) => q.query == dependencyId
-          );
-          if (dependencyQuery === undefined) {
-            throw new Error(`Dependency ${dependencyId} not found in model`);
-          } else if (dependencyQuery.status === "succeeded") {
-            succeededDependencies.push(dependencyQuery);
-          } else if (dependencyQuery.status === "failed") {
-            failedDependencies.push(dependencyQuery);
-          } else {
-            pendingDependencies.push(dependencyQuery);
-          }
+      const dependencyIds: string[] = query.dependencies ?? [];
+      dependencyIds.forEach((dependencyId) => {
+        const dependencyQuery = this.model.queries.find(
+          (q) => q.query == dependencyId
+        );
+        if (dependencyQuery === undefined) {
+          throw new Error(`Dependency ${dependencyId} not found in model`);
+        } else if (dependencyQuery.status === "succeeded") {
+          succeededDependencies.push(dependencyQuery);
+        } else if (dependencyQuery.status === "failed") {
+          failedDependencies.push(dependencyQuery);
+        } else {
+          pendingDependencies.push(dependencyQuery);
+        }
+      });
+
+      if (failedDependencies.length) {
+        logger.debug(`${query.id}: Dependency failed...`);
+        await updateQuery(query, {
+          finishedAt: new Date(),
+          status: "failed",
+          error: `Dependencies failed: ${failedDependencies.map(
+            (q) => q.query
+          )}`,
         });
-
-        if (failedDependencies.length) {
-          logger.debug(`${query.id}: Dependency failed...`);
+        this.onQueryFinish();
+        return;
+      }
+      if (pendingDependencies.length) {
+        logger.debug(`${query.id}: Dependencies pending...`);
+        return;
+      }
+      if (succeededDependencies.length === dependencyIds.length) {
+        logger.debug(`${query.id}: Dependencies completed, running...`);
+        const runCallbacks = this.runCallbacks[query.id];
+        if (runCallbacks === undefined) {
+          logger.debug(`${query.id}: Run callbacks not found..`);
           await updateQuery(query, {
             finishedAt: new Date(),
             status: "failed",
-            error: `Dependencies failed: ${failedDependencies.map(
-              (q) => q.query
-            )}`,
+            error: `Run callbacks not found`,
           });
           this.onQueryFinish();
-          return;
-        }
-        if (pendingDependencies.length) {
-          logger.debug(`${query.id}: Dependencies pending...`);
-          return;
-        }
-        if (succeededDependencies.length === dependencyIds.length) {
-          logger.debug(`${query.id}: Dependencies completed, running...`);
-          const runCallbacks = this.runCallbacks[query.id];
-          if (runCallbacks === undefined) {
-            logger.debug(`${query.id}: Run callbacks not found..`);
-            await updateQuery(query, {
-              finishedAt: new Date(),
-              status: "failed",
-              error: `Run callbacks not found`,
-            });
-            this.onQueryFinish();
-          } else {
-            if (await this.concurrencyLimitReached()) {
-              setTimeout(() => {
-                this.executeQueryWhenReady(
-                  query,
-                  runCallbacks.run,
-                  runCallbacks.process
-                );
-              }, 500);
-            } else {
-              await this.executeQuery(
+        } else {
+          if (await this.concurrencyLimitReached()) {
+            setTimeout(() => {
+              this.executeQueryWhenReady(
                 query,
                 runCallbacks.run,
                 runCallbacks.process
               );
-            }
+            }, 500);
+          } else {
+            await this.executeQuery(
+              query,
+              runCallbacks.run,
+              runCallbacks.process
+            );
           }
         }
-      })
-    );
+      }
+    }
   }
 
   public async refreshQueryStatuses(): Promise<QueryMap> {
