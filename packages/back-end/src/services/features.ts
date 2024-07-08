@@ -97,12 +97,14 @@ export function generateFeaturesPayload({
   environment,
   groupMap,
   prereqStateCache = {},
+  savedGroupReferencesEnabled,
 }: {
   features: FeatureInterface[];
   experimentMap: Map<string, ExperimentInterface>;
   environment: string;
   groupMap: GroupMap;
   prereqStateCache?: Record<string, Record<string, PrerequisiteStateResult>>;
+  savedGroupReferencesEnabled?: boolean;
 }): Record<string, FeatureDefinition> {
   prereqStateCache[environment] = prereqStateCache[environment] || {};
 
@@ -118,6 +120,7 @@ export function generateFeaturesPayload({
       environment,
       groupMap,
       experimentMap,
+      savedGroupReferencesEnabled,
     });
     if (def) {
       defs[feature.id] = def;
@@ -145,6 +148,7 @@ export function generateAutoExperimentsPayload({
   features,
   environment,
   prereqStateCache = {},
+  savedGroupReferencesEnabled,
 }: {
   visualExperiments: VisualExperiment[];
   urlRedirectExperiments: URLRedirectExperiment[];
@@ -152,6 +156,7 @@ export function generateAutoExperimentsPayload({
   features: FeatureInterface[];
   environment: string;
   prereqStateCache?: Record<string, Record<string, PrerequisiteStateResult>>;
+  savedGroupReferencesEnabled?: boolean;
 }): AutoExperimentWithProject[] {
   prereqStateCache[environment] = prereqStateCache[environment] || {};
 
@@ -195,12 +200,18 @@ export function generateAutoExperimentsPayload({
       const condition = getParsedCondition(
         groupMap,
         phase?.condition,
-        phase?.savedGroups
+        phase?.savedGroups,
+        savedGroupReferencesEnabled
       );
 
       const prerequisites = (phase?.prerequisites ?? [])
         ?.map((p) => {
-          const condition = getParsedCondition(groupMap, p.condition);
+          const condition = getParsedCondition(
+            groupMap,
+            p.condition,
+            undefined,
+            savedGroupReferencesEnabled
+          );
           if (!condition) return null;
           return {
             id: p.id,
@@ -348,7 +359,7 @@ export function filterUsedSavedGroups(
   features: Record<string, FeatureDefinition>,
   experimentsDefinitions: AutoExperimentWithProject[]
 ) {
-  const usedGroupIds = new Set(["grp_341u57sslws4ggzr"]);
+  const usedGroupIds = new Set();
   const addToUsedGroupIds: NodeHandler = (node) => {
     if (node[0] === "$inGroup" || node[0] === "$notInGroup") {
       usedGroupIds.add(node[1]);
@@ -377,7 +388,8 @@ export async function refreshSDKPayloadCache(
   payloadKeys: SDKPayloadKey[],
   allFeatures: FeatureInterface[] | null = null,
   experimentMap?: Map<string, ExperimentInterface>,
-  skipRefreshForProject?: string
+  skipRefreshForProject?: string,
+  savedGroupReferencesEnabled?: boolean
 ) {
   // This is a background job, so switch to using a background context
   // This is required so that we have full read access to the entire org's data
@@ -436,6 +448,7 @@ export async function refreshSDKPayloadCache(
       groupMap,
       experimentMap,
       prereqStateCache,
+      savedGroupReferencesEnabled,
     });
 
     const experimentsDefinitions = generateAutoExperimentsPayload({
@@ -445,6 +458,7 @@ export async function refreshSDKPayloadCache(
       features: allFeatures,
       environment,
       prereqStateCache,
+      savedGroupReferencesEnabled,
     });
 
     const savedGroupsInUse = Object.keys(
@@ -646,6 +660,7 @@ export type FeatureDefinitionArgs = {
   includeExperimentNames?: boolean;
   includeRedirectExperiments?: boolean;
   hashSecureAttributes?: boolean;
+  savedGroupReferencesEnabled?: boolean;
 };
 
 export type FeatureDefinitionSDKPayload = {
@@ -669,6 +684,7 @@ export async function getFeatureDefinitions({
   includeExperimentNames,
   includeRedirectExperiments,
   hashSecureAttributes,
+  savedGroupReferencesEnabled,
 }: FeatureDefinitionArgs): Promise<FeatureDefinitionSDKPayload> {
   // Return cached payload from Mongo if exists
   try {
@@ -774,6 +790,7 @@ export async function getFeatureDefinitions({
     groupMap,
     experimentMap,
     prereqStateCache,
+    savedGroupReferencesEnabled,
   });
 
   const allVisualExperiments = await getAllVisualExperiments(
@@ -793,6 +810,7 @@ export async function getFeatureDefinitions({
     features,
     environment,
     prereqStateCache,
+    savedGroupReferencesEnabled,
   });
 
   const savedGroupsInUse = filterUsedSavedGroups(
@@ -888,6 +906,7 @@ export function evaluateFeature({
         environment: env.id,
         revision,
         returnRuleId: true,
+        savedGroupReferencesEnabled: true,
       });
       if (definition) {
         // Prerequisite scrubbing:
@@ -1048,11 +1067,13 @@ export function getApiFeatureObj({
   organization,
   groupMap,
   experimentMap,
+  savedGroupReferencesEnabled,
 }: {
   feature: FeatureInterface;
   organization: OrganizationInterface;
   groupMap: GroupMap;
   experimentMap: Map<string, ExperimentInterface>;
+  savedGroupReferencesEnabled?: boolean;
 }): ApiFeature {
   const defaultValue = feature.defaultValue;
   const featureEnvironments: Record<string, ApiFeatureEnvironment> = {};
@@ -1078,6 +1099,7 @@ export function getApiFeatureObj({
       groupMap,
       experimentMap,
       environment: env,
+      savedGroupReferencesEnabled,
     });
 
     featureEnvironments[env] = {

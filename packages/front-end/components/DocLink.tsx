@@ -61,6 +61,7 @@ const docSections = {
   wordpress: "/integrations/wordpress",
   prerequisites: "/features/prerequisites",
   statisticsSequential: "/statistics/sequential",
+  savedGroups: "/features/targeting#saved-groups",
 };
 
 export type DocSection = keyof typeof docSections;
