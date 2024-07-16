@@ -3,7 +3,7 @@ import {
   SDKConnectionInterface,
 } from "back-end/types/sdk-connection";
 import { useForm } from "react-hook-form";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import {
   FaCheck,
@@ -23,10 +23,9 @@ import {
 import {
   filterProjectsByEnvironment,
   getDisallowedProjects,
-  getMatchingRules,
 } from "shared/util";
 import { useDefinitions } from "@/services/DefinitionsContext";
-import { useEnvironments, useFeaturesList } from "@/services/features";
+import { useEnvironments } from "@/services/features";
 import Modal from "@/components/Modal";
 import { useAuth } from "@/services/auth";
 import Field from "@/components/Forms/Field";
@@ -41,7 +40,6 @@ import ControlledTabs from "@/components/Tabs/ControlledTabs";
 import Tab from "@/components/Tabs/Tab";
 import MultiSelectField from "@/components/Forms/MultiSelectField";
 import { DocLink } from "@/components/DocLink";
-import LargeSavedGroupSupportWarning from "@/components/SavedGroups/LargeSavedGroupSupportWarning";
 import SDKLanguageSelector from "./SDKLanguageSelector";
 import {
   LanguageType,
@@ -79,8 +77,7 @@ export default function SDKConnectionForm({
   cta?: string;
 }) {
   const environments = useEnvironments();
-  const { project, projects, getProjectById, savedGroups } = useDefinitions();
-  const { features } = useFeaturesList(false);
+  const { project, projects, getProjectById } = useDefinitions();
   const projectIds = projects.map((p) => p.id);
 
   const { apiCall } = useAuth();
@@ -208,40 +205,6 @@ export default function SDKConnectionForm({
     selectedProjects ?? [],
     selectedEnvironment
   );
-  const projectsWithLargeSavedGroups = useMemo(() => {
-    const projects: Set<string> = new Set();
-    const largeSavedGroups = new Set(
-      savedGroups.filter((sg) => sg.passByReferenceOnly).map((sg) => sg.id)
-    );
-    const largeSavedGroupsRegex = new RegExp([...largeSavedGroups].join("|"));
-    features.forEach((feature) => {
-      const matches = getMatchingRules(
-        feature,
-        (rule) =>
-          !!rule.condition?.match(largeSavedGroupsRegex) ||
-          rule.savedGroups?.some((g) =>
-            g.ids.some((sgid) => largeSavedGroups.has(sgid))
-          ) ||
-          false,
-        environments.map((e) => e.id)
-      );
-
-      if (matches.length > 0) {
-        projects.add(feature.project || "");
-      }
-    });
-    return projects;
-  }, [savedGroups, environments, features]);
-  const savedGroupReferencesSupported = currentSdkCapabilities.includes(
-    "savedGroupReferences"
-  );
-  const showSavedGroupReferencesError =
-    !savedGroupReferencesSupported &&
-    projectsWithLargeSavedGroups.size > 0 &&
-    (selectedProjects?.length === 0 ||
-      selectedProjects?.some((project) =>
-        projectsWithLargeSavedGroups.has(project)
-      ));
 
   const projectsOptions = [...filteredProjects, ...disallowedProjects].map(
     (p) => ({
@@ -568,9 +531,6 @@ export default function SDKConnectionForm({
               the selected environment. This may have occurred as a result of a
               project being removed from the selected environment.
             </div>
-          )}
-          {showSavedGroupReferencesError && (
-            <LargeSavedGroupSupportWarning type="sdk_connection" />
           )}
         </div>
 
